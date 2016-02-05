@@ -15,6 +15,8 @@ func init() {
 }
 
 func main() {
-	// when hook is injected succesfully, logs will be send to redis server
+	// when hook is injected successfully, logs will be send to redis server
 	log.Info("just some info logging...")
+
+	log.WithFields(log.Fields{ "animal": "walrus", "number": 1, "size": 10, }).Info("and with fields")
 }

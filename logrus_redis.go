@@ -32,6 +32,7 @@ type LogstashMessageV0 struct {
 		Level     string `json:"level"`
 		Timestamp string `json:"timestamp"`
 	} `json:"@fields"`
+	CustomFields map[string]string `json:"@custom_fields"`
 }
 
 // LogstashMessageV1 represents v1 format
@@ -45,6 +46,7 @@ type LogstashMessageV1 struct {
 		Level     string `json:"level"`
 		Timestamp string `json:"timestamp"`
 	} `json:"@fields"`
+	CustomFields map[string]string `json:"@custom_fields"`
 }
 
 // NewHook creates a hook to be added to an instance of logger
@@ -118,6 +120,7 @@ func createV0Message(entry *logrus.Entry) LogstashMessageV0 {
 	m.Sourcehost = reportHostname()
 	m.Message = entry.Message
 	m.Fields.Level = entry.Level.String()
+	m.CustomFields = logEntryToStringMap(entry)
 	return m
 }
 
@@ -127,7 +130,24 @@ func createV1Message(entry *logrus.Entry) LogstashMessageV1 {
 	m.Sourcehost = reportHostname()
 	m.Message = entry.Message
 	m.Fields.Level = entry.Level.String()
+	m.CustomFields = logEntryToStringMap(entry)
 	return m
+}
+
+func logEntryToStringMap(entry *logrus.Entry) map[string]string {
+	m := make(map[string]string)
+
+	if (len(entry.Data) > 0) {
+		for key, value := range entry.Data {
+			if str, ok := value.(string); ok {
+				m[key] = str
+			} else {
+				m[key] = fmt.Sprintf("%v", value)
+			}
+		}
+	}
+
+	return m;
 }
 
 func newRedisConnectionPool(server string, port int) *redis.Pool {
