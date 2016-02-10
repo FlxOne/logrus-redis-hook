@@ -18,6 +18,7 @@ type RedisHook struct {
 	RedisKey       string
 	LogstashFormat string
 	RedisPort      int
+	Level          logrus.Level
 }
 
 // LogstashMessageV0 represents v0 format
@@ -50,7 +51,7 @@ type LogstashMessageV1 struct {
 }
 
 // NewHook creates a hook to be added to an instance of logger
-func NewHook(host string, port int, key string, format string) (*RedisHook, error) {
+func NewHook(host string, port int, key string, format string, level logrus.Level) (*RedisHook, error) {
 	pool := newRedisConnectionPool(host, port)
 
 	// test if connection with REDIS can be established
@@ -73,6 +74,7 @@ func NewHook(host string, port int, key string, format string) (*RedisHook, erro
 		RedisPool:      pool,
 		RedisKey:       key,
 		LogstashFormat: format,
+		Level:          level,
 	}, nil
 }
 
@@ -104,14 +106,29 @@ func (hook *RedisHook) Fire(entry *logrus.Entry) error {
 
 // Levels returns the available logging levels.
 func (hook *RedisHook) Levels() []logrus.Level {
-	return []logrus.Level{
-		logrus.DebugLevel,
-		logrus.InfoLevel,
-		logrus.WarnLevel,
-		logrus.ErrorLevel,
-		logrus.FatalLevel,
-		logrus.PanicLevel,
+	levels := make([]logrus.Level, 1)
+
+	switch hook.Level {
+	case logrus.DebugLevel:
+		levels = append(levels, logrus.DebugLevel)
+		fallthrough
+	case logrus.InfoLevel:
+		levels = append(levels, logrus.InfoLevel)
+		fallthrough
+	case logrus.WarnLevel:
+		levels = append(levels, logrus.WarnLevel)
+		fallthrough
+	case logrus.ErrorLevel:
+		levels = append(levels, logrus.ErrorLevel)
+		fallthrough
+	case logrus.FatalLevel:
+		levels = append(levels, logrus.FatalLevel)
+		fallthrough
+	case logrus.PanicLevel:
+		levels = append(levels, logrus.PanicLevel)
 	}
+
+	return levels
 }
 
 func createV0Message(entry *logrus.Entry) LogstashMessageV0 {
