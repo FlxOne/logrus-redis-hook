@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
 	"github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
 )
@@ -19,6 +18,9 @@ type RedisHook struct {
 	LogstashFormat string
 	RedisPort      int
 	Level          logrus.Level
+	Async          bool
+	EntryQueue     chan *logrus.Entry
+	Quit           chan int
 }
 
 // LogstashMessageV0 represents v0 format
@@ -51,7 +53,7 @@ type LogstashMessageV1 struct {
 }
 
 // NewHook creates a hook to be added to an instance of logger
-func NewHook(host string, port int, key string, format string, level logrus.Level) (*RedisHook, error) {
+func NewHook(host string, port int, key string, format string, level logrus.Level, async bool, bufferSize int) (*RedisHook, error) {
 	pool := newRedisConnectionPool(host, port)
 
 	// test if connection with REDIS can be established
@@ -69,39 +71,39 @@ func NewHook(host string, port int, key string, format string, level logrus.Leve
 		format = "v0"
 	}
 
-	return &RedisHook{
+	redisHook := RedisHook {
 		RedisHost:      host,
 		RedisPool:      pool,
 		RedisKey:       key,
 		LogstashFormat: format,
 		Level:          level,
-	}, nil
+		Async:          async,
+		EntryQueue:     nil,
+		Quit:           nil,
+	}
+
+	if async {
+		redisHook.EntryQueue = make(chan *logrus.Entry, bufferSize)
+		redisHook.Quit = make(chan int)
+		go redisHook.asyncProcessing()
+	}
+
+	return &redisHook, nil
 }
 
 // Fire is called when a log event is fired.
 func (hook *RedisHook) Fire(entry *logrus.Entry) error {
-	var msg interface{}
+	if hook.Async {
+		select {
+		case hook.EntryQueue <- entry:
+		default:
+			fmt.Println("Buffer of redis hook's channel is full, log entry discarded")
+		}
 
-	switch hook.LogstashFormat {
-	case "v0":
-		msg = createV0Message(entry)
-	case "v1":
-		msg = createV1Message(entry)
+		return nil
+	} else {
+		return hook.processEntry(entry)
 	}
-
-	js, err := json.Marshal(msg)
-	if err != nil {
-		return fmt.Errorf("error creating message for REDIS: %s", err)
-	}
-
-	conn := hook.RedisPool.Get()
-	defer conn.Close()
-
-	_, err = conn.Do("RPUSH", hook.RedisKey, js)
-	if err != nil {
-		return fmt.Errorf("error sending message to REDIS: %s", err)
-	}
-	return nil
 }
 
 // Levels returns the available logging levels.
@@ -129,6 +131,42 @@ func (hook *RedisHook) Levels() []logrus.Level {
 	}
 
 	return levels
+}
+
+func (hook *RedisHook) asyncProcessing() {
+	for {
+		select {
+		case entry := <- hook.EntryQueue:
+			hook.processEntry(entry)
+		case <- hook.Quit:
+			return
+		}
+	}
+}
+
+func (hook *RedisHook) processEntry(entry *logrus.Entry) error {
+	var msg interface{}
+
+	switch hook.LogstashFormat {
+	case "v0":
+		msg = createV0Message(entry)
+	case "v1":
+		msg = createV1Message(entry)
+	}
+
+	js, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("error creating message for REDIS: %s", err)
+	}
+
+	conn := hook.RedisPool.Get()
+	defer conn.Close()
+
+	_, err = conn.Do("RPUSH", hook.RedisKey, js)
+	if err != nil {
+		return fmt.Errorf("error sending message to REDIS: %s", err)
+	}
+	return nil
 }
 
 func createV0Message(entry *logrus.Entry) LogstashMessageV0 {

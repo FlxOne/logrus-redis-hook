@@ -6,7 +6,7 @@ import (
 )
 
 func init() {
-	hook, err := logredis.NewHook("localhost", 6379, "my_redis_key", "v0")
+	hook, err := logredis.NewHook("localhost", 6379, "my_redis_key", "v0", log.DebugLevel, false, 1000)
 	if err == nil {
 		log.AddHook(hook)
 	} else {
