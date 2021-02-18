@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
 )
 
